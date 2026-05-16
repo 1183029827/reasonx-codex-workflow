@@ -1,0 +1,20 @@
+# --- Reasonix logs and archives ---
+.reasonix/logs/
+.reasonix/archive/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+
+# --- Test caches ---
+.pytest_cache/
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+
+# --- Logs ---
+*.log
+*.out
+*.err

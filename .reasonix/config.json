@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "codex": {
+    "model": "gpt-5.5",
+    "reasoning_effort": "medium",
+    "sandbox": "read-only",
+    "stderr_redirect": true,
+    "log_dir": ".reasonix/logs"
+  }
+}
+
