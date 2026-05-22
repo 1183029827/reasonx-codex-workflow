@@ -29,7 +29,7 @@ npm install -g @openai/codex    # Codex CLI（后备顾问）
 # 3. 编辑 REASONIX.md 和 PROJECT_STATE.md，填入项目信息
 
 # 4. 验证工作流
-powershell -ExecutionPolicy Bypass -File scripts/ask_codex.ps1 -Question "Smoke test, respond with OK." 2>&1
+powershell -ExecutionPolicy Bypass -File scripts/ask_codex.ps1 -Mode decide -Question "Smoke test, respond with OK." 2>&1
 ```
 
 ---
@@ -42,7 +42,7 @@ powershell -ExecutionPolicy Bypass -File scripts/ask_codex.ps1 -Question "Smoke 
 | `PROJECT_STATE.md` | 状态板 — Reasonix 持续读写 | ✅ 随项目推进更新 |
 | `.reasonix/config.json` | 工作流配置（顾问 provider、模型、推理强度、日志目录） | ⬜ 可选修改 |
 | `.reasonix/skills/consult-codex.md` | 完整工作流规范（10 节 + 附录） | ❌ 无需修改，可复用 |
-| `scripts/ask_codex.ps1` | 顾问桥接脚本（opencode / codex 双 provider） | ❌ 无需修改 |
+| `scripts/ask_codex.ps1` | 顾问桥接脚本（opencode / codex 双 provider，三模式） | ❌ 无需修改 |
 
 ---
 
@@ -62,27 +62,29 @@ powershell -ExecutionPolicy Bypass -File scripts/ask_codex.ps1 -Question "Smoke 
 └──────────┬───────────────────────────────────────┘
            ▼
 ┌──────────────────────────────────────────────────┐
-│ ③ 升级规则（满足任一即调用 Advisor）               │
-│   方案选择 / 结果冲突 / 复杂 bug / 架构改动        │
-│   设计 review / 论文判断 / 根因分析                │
-│   + 代码 Review Gate：改代码后强制 GLM review      │
+│ ③ 升级规则 → 选择 Mode + 模型                      │
+│   方案选择 → decide   结果冲突 → discuss            │
+│   代码 review → review  架构改动 → decide           │
+│   GLM 5.1: 代码/bug/workflow                      │
+│   GPT-5.5: 架构/模型优化/研究方向                   │
 └──────────┬───────────────────────────────────────┘
            ▼
 ┌──────────────────────────────────────────────────┐
-│ ④ 模型选择 + 难度评估                              │
-│   GLM 5.1: 代码 review / bug / workflow           │
-│   GPT-5.5: 架构设计 / 模型优化 / 研究方向          │
+│ ④ 难度评估 → 推理强度                              │
 │   T1 low · T2 medium · T3 high · T4 xhigh        │
 └──────────┬───────────────────────────────────────┘
            ▼
 ┌──────────────────────────────────────────────────┐
-│ ⑤ 压缩上下文 → 调用 consult-codex skill           │
-│   goal + state + files + logs + question          │
+│ ⑤ 按模式组装上下文 → 调用 ask_codex.ps1            │
+│   -Mode decide|review|discuss                    │
+│   -Context "GOAL/DIFF/PROBLEM + 结构化块"         │
 └──────────┬───────────────────────────────────────┘
            ▼
 ┌──────────────────────────────────────────────────┐
-│ ⑥ Advisor 返回结构化建议                           │
-│   decision · rationale · risks · next_steps · checks
+│ ⑥ Advisor 返回模式特定的结构化输出                  │
+│   decide: decision · rationale · risks · steps    │
+│   review: summary · findings · overall_notes      │
+│   discuss: analysis · hypotheses · recommendation │
 └──────────┬───────────────────────────────────────┘
            ▼
 ┌──────────────────────────────────────────────────┐
@@ -99,25 +101,38 @@ powershell -ExecutionPolicy Bypass -File scripts/ask_codex.ps1 -Question "Smoke 
 
 ---
 
-## 调用示例
+## 三种调用模式
+
+### decide — 方案决策
 
 ```powershell
-# 简单查证（T1 → low）
-powershell -ExecutionPolicy Bypass -File scripts/ask_codex.ps1 -Question "这个错误日志是什么原因？" 2>&1
-
-# 方案选择（T2 → medium）
-powershell -ExecutionPolicy Bypass -File scripts/ask_codex.ps1 -Question "应该用 YAML 还是 JSON 做配置文件？" 2>&1
-
-# 架构决策（T3 → high）
-$env:ADVISOR_VARIANT = "high"
-powershell -ExecutionPolicy Bypass -File scripts/ask_codex.ps1 -Question "这个重构方案的风险有哪些？" 2>&1
-
-# 切换到 GPT-5.5 处理研究问题
-$env:ADVISOR_PROVIDER = "codex"
-powershell -ExecutionPolicy Bypass -File scripts/ask_codex.ps1 -Question "这个模型架构设计有什么问题？" 2>&1
+powershell -ExecutionPolicy Bypass -File scripts/ask_codex.ps1 `
+  -Mode decide `
+  -Question "应该用方案 A 还是方案 B？" `
+  -Context "GOAL: ...; OPTIONS: A: ... B: ...; CONSTRAINTS: ..." `
+  2>&1
 ```
 
-> **注意：** 在 Reasonix 的 `run_command` 环境中调用时，必须加 `2>&1`。
+### review — 代码审查
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/ask_codex.ps1 `
+  -Mode review `
+  -Context "DIFF: ...; PURPOSE: ...; DESIGN_DECISIONS: ..." `
+  2>&1
+```
+
+### discuss — 讨论分析
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/ask_codex.ps1 `
+  -Mode discuss `
+  -Question "为什么训练在第 50 epoch 开始发散？" `
+  -Context "PROBLEM: ...; TRIED_SO_FAR: ...; KEY_LOGS: ..." `
+  2>&1
+```
+
+> **注意：** 在 Reasonix 的 `run_command` 环境中调用时，必须加 `2>&1`。`-Context` 的组装清单详见 `consult-codex.md` §5.2。
 
 ---
 

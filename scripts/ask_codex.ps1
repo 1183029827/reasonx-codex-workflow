@@ -6,9 +6,23 @@
     powershell -ExecutionPolicy Bypass -File scripts/ask_codex.ps1 -Question "..." 2>&1
 #>
 param(
-    [Parameter(Mandatory=$true)]
-    [string]$Question
+    [Parameter(Mandatory=$false)]
+    [string]$Question = "",
+
+    [ValidateSet("decide","review","discuss")]
+    [string]$Mode = "decide",
+
+    [string]$Context = ""
 )
+
+# --- Validate inputs per mode ---
+if ($Mode -ne "review" -and $Question.Trim() -eq "") {
+    Write-Error "Question is required for '$Mode' mode."
+    exit 1
+}
+if ($Context.Trim() -eq "") {
+    Write-Warning "Context is empty. Advisor may not have enough information."
+}
 
 # --- Load config ---
 $ConfigPath = ".reasonix/config.json"
@@ -50,42 +64,124 @@ if (-not (Test-Path $StateFile)) {
 
 # --- Build prompt ---
 $ProjectState = Get-Content $StateFile -Raw -Encoding UTF8
-$PromptTemplate = @'
-CRITICAL: You are a READ-ONLY advisor. You MUST NOT use ANY tools (grep, read, ls, glob, bash, view, edit, websearch, etc.) to explore files or search the codebase. Answer ONLY from the information provided in this prompt. If the provided information is insufficient, state what additional information you need — do NOT go looking for it yourself. Using tools will waste time and tokens and may cause the session to hang.
+
+switch ($Mode) {
+
+    "decide" {
+        $PromptTemplate = @'
+CRITICAL: You are a READ-ONLY advisor. You MUST NOT use ANY tools (grep, read, ls, glob, bash, view, edit, websearch, etc.) to explore files or search the codebase. Answer ONLY from the information provided in this prompt. Using tools will waste time and tokens and may cause the session to hang.
 
 ---
 
-You are a senior technical advisor reporting to Reasonix (the primary executor of this repository).
+You are a senior technical advisor helping Reasonix make a design or strategy decision.
 
-Role rules:
+Rules:
 - You are NOT the executor. Do NOT propose editing files or running commands.
-- You are a pure reasoning engine. Think, then return structured advice.
-- All relevant context is provided below. Do NOT explore further.
+- Think critically about tradeoffs. The context below is all you have — do NOT explore further.
+- If the context is insufficient, state what is missing rather than guessing.
 
 Return your answer in this exact structure:
 
-decision:
-- ...
-
+decision: <clear choice with brief justification>
 rationale:
-- ...
-
+- <bullet points citing specific evidence from the context>
 risks:
-- ...
-
+- <what could go wrong with this decision>
 next_steps:
-- ...
-
+- <concrete actions if the decision is accepted>
 checks:
-- ...
+- <how to verify the decision was correct later>
 
-Project state:
+---
+
+CONTEXT (prepared by Reasonix):
+___CONTEXT___
+
+PROJECT STATE:
 ___PROJECT_STATE___
 
-User question:
+DECISION QUESTION:
 ___QUESTION___
 '@
-$Prompt = $PromptTemplate.Replace('___PROJECT_STATE___', $ProjectState).Replace('___QUESTION___', $Question)
+    }
+
+    "review" {
+        $PromptTemplate = @'
+CRITICAL: You are a READ-ONLY advisor. You MUST NOT use ANY tools (grep, read, ls, glob, bash, view, edit, websearch, etc.). Review ONLY the code provided below. Using tools will waste time and may cause the session to hang.
+
+---
+
+You are a senior code reviewer. Review the changes below for correctness, hidden coupling, initialization discipline, and gradient flow.
+
+Rules:
+- You are NOT the executor. Do NOT propose editing files directly.
+- Focus on logic errors, coupling risks, init/cleanup issues, and gradient-flow problems.
+- Ignore style nits unless they mask a real bug.
+
+Return your review in this exact structure:
+
+summary: <approve | changes-requested | comment>
+
+findings:
+- file: <path>
+  line: <line or range>
+  severity: <critical | major | minor | nit>
+  category: <logic | coupling | init | gradient | perf | style>
+  description: <concrete issue>
+  suggestion: <specific fix>
+
+overall_notes:
+- <cross-cutting observations or praise>
+
+---
+
+REVIEW CONTEXT (prepared by Reasonix — includes diff, purpose, design decisions, focus areas):
+___CONTEXT___
+
+PROJECT STATE:
+___PROJECT_STATE___
+'@
+    }
+
+    "discuss" {
+        $PromptTemplate = @'
+CRITICAL: You are a READ-ONLY advisor. You MUST NOT use ANY tools (grep, read, ls, glob, bash, view, edit, websearch, etc.). Reason from the provided context only. Using tools will waste time and may cause the session to hang.
+
+---
+
+You are a senior technical collaborator. Reasonix is stuck on a problem and needs your analysis and ideas.
+
+Rules:
+- You are NOT the executor. Do NOT propose editing files or running commands.
+- Think like a debugger: form hypotheses, identify missing information, suggest next steps.
+- The context below is all you have — do NOT explore further.
+
+Return your analysis in this exact structure:
+
+analysis: <free-form analysis of the situation>
+key_observations:
+- <important facts or constraints from the context>
+hypotheses:
+- <possible explanations or approaches, ranked by likelihood or merit>
+open_questions:
+- <what additional information would help narrow this down>
+recommendation: <your top suggestion for what to try next>
+
+---
+
+DISCUSSION CONTEXT (prepared by Reasonix — includes problem description, what was tried, key logs, eliminated hypotheses):
+___CONTEXT___
+
+PROJECT STATE:
+___PROJECT_STATE___
+
+PROBLEM:
+___QUESTION___
+'@
+    }
+}
+
+$Prompt = $PromptTemplate.Replace('___PROJECT_STATE___', $ProjectState).Replace('___QUESTION___', $Question).Replace('___CONTEXT___', $Context)
 
 # --- Ensure log directory ---
 if (-not (Test-Path $LogDir)) {
