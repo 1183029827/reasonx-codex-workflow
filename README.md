@@ -1,4 +1,4 @@
-# Reasonix + Advisor Workflow v1.0
+# Reasonix + Advisor Workflow
 
 **Reasonix 总控 + 多模型顾问** — 一个可复用的结构化 AI 协作工作流。
 
@@ -207,6 +207,42 @@ powershell ... -Mode discuss -Question "基于上次分析，我补充了日志"
 | PowerShell | Windows 自带，运行 ask_codex.ps1 |
 
 ---
+
+## Changelog
+
+### [1.0.0] — 2026-05-23
+
+- **Advisor exploration mode**: Advisor can now explore the codebase freely using `grep`, `read`, and `glob`. Prompt changed from "MUST NOT use ANY tools" to "use grep, read, and glob freely". `bash`, `edit`, and `write` remain forbidden.
+- **Background execution**: Reasonix now uses `run_background` + `wait_for_job` instead of synchronous `run_command`, with tiered timeouts (2 min – 15 min) to accommodate exploration latency.
+- **Dual-model mode** (`-Dual`): Query both GLM 5.1 and GPT-5.5 in a single call for cross-validation on high-stakes decisions.
+- **Session resume** (`-Session`): Continue a previous advisor conversation by passing a session ID, enabling multi-turn dialogue without losing context.
+- **Hallucination check** (§8.1): Reasonix verifies every `file:line` reference in advisor responses before absorbing advice. Two or more invalid references trigger a model switch.
+- **PROJECT_MAP** (§5.6): Reasonix auto-generates a relevant-file map appended to `-Context`, guiding the advisor to high-value files instead of blind grep.
+- **Reasoning effort** bumped to `xhigh` by default for both opencode and codex.
+- **Dispatch refactor**: `_Run-OpenCode`, `_Parse-OpenCodeJsonl`, `_Run-Codex` helpers extracted; stdout/stderr captured via temp files to avoid PowerShell encoding issues.
+
+### [0.3.0] — 2026-05-22
+
+- **Three-mode system**: `-Mode decide|review|discuss` replaces the flat `-Question`-only interface. Each mode has a dedicated prompt template and structured output format.
+- **Context assembly checklists** (§5.2): Mode-specific required fields (`GOAL`/`OPTIONS`/`CONSTRAINTS` for decide, `DIFF`/`PURPOSE`/`DESIGN_DECISIONS` for review, `PROBLEM`/`TRIED_SO_FAR`/`KEY_LOGS` for discuss).
+- **Mode-specific output formats** (§7): `decide` outputs `decision`/`rationale`/`risks`/`next_steps`/`checks`; `review` outputs `summary`/`findings`/`overall_notes`; `discuss` outputs `analysis`/`hypotheses`/`recommendation`.
+
+### [0.2.0] — 2026-05-22
+
+- **Dual provider**: Advisor now supports `opencode` (GLM 5.1) as primary and `codex` (GPT-5.5) as fallback, driven by `.reasonix/config.json` → `advisor.provider`.
+- **Code Review Gate** (§3.1): Mandatory advisor review for all code changes before commit or training launch.
+- **Model routing by domain** (§3.2): GLM 5.1 for code review / bugs / workflows; GPT-5.5 for architecture / model design / research.
+- **ASCII-only enforcement** for `PROJECT_STATE.md` to prevent encoding corruption in CLI pipelines.
+- **Agent behavior control** (§5.3): Prompt-level tool restriction to prevent advisor self-exploration.
+- **Timeout recommendations** (§6.1): Tiered `run_command` timeouts (30s – 300s).
+
+### [0.1.0] — 2026-05-21
+
+- Initial release: Reasonix + Codex (GPT-5.5) dual-AI collaboration workflow.
+- Single `-Question` parameter interface via `scripts/ask_codex.ps1`.
+- Structured advisor output format (`decision`/`rationale`/`risks`/`next_steps`/`checks`).
+- `PROJECT_STATE.md` state tracking with `Verified results` table.
+- `REASONIX.md` project entry point with placeholder-based project configuration.
 
 ## License
 
