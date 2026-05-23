@@ -3,11 +3,11 @@
   "advisor": {
     "provider": "opencode",
     "model": "opencode-go/glm-5.1",
-    "variant": "medium"
+    "variant": "xhigh"
   },
   "codex": {
     "model": "gpt-5.5",
-    "reasoning_effort": "high",
+    "reasoning_effort": "xhigh",
     "sandbox": "read-only",
     "stderr_redirect": true,
     "log_dir": ".reasonix/logs"

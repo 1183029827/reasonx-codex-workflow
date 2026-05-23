@@ -2,8 +2,12 @@
 .SYNOPSIS
   Invoke advisor CLI (opencode or codex), driven by .reasonix/config.json advisor.provider.
 .NOTES
-  When calling from Reasonix run_command, append 2>&1:
-    powershell -ExecutionPolicy Bypass -File scripts/ask_codex.ps1 -Question "..." 2>&1
+  Single-model (via run_background):
+    powershell -File scripts/ask_codex.ps1 -Mode decide -Question "..." -Context "..."
+  Resume session:
+    powershell -File scripts/ask_codex.ps1 -Mode discuss -Question "..." -Session ses_abc123
+  Dual-model (GLM + GPT-5.5):
+    powershell -File scripts/ask_codex.ps1 -Mode decide -Question "..." -Dual
 #>
 param(
     [Parameter(Mandatory=$false)]
@@ -12,7 +16,11 @@ param(
     [ValidateSet("decide","review","discuss")]
     [string]$Mode = "decide",
 
-    [string]$Context = ""
+    [string]$Context = "",
+
+    [string]$Session = "",
+
+    [switch]$Dual
 )
 
 # --- Validate inputs per mode ---
@@ -69,16 +77,15 @@ switch ($Mode) {
 
     "decide" {
         $PromptTemplate = @'
-CRITICAL: You are a READ-ONLY advisor. You MUST NOT use ANY tools (grep, read, ls, glob, bash, view, edit, websearch, etc.) to explore files or search the codebase. Answer ONLY from the information provided in this prompt. Using tools will waste time and tokens and may cause the session to hang.
-
----
-
 You are a senior technical advisor helping Reasonix make a design or strategy decision.
 
+You have full read access to this codebase. Use grep, read, and glob freely to explore relevant files, trace dependencies, and gather context. Take as much time as you need — thoroughness matters more than speed.
+
 Rules:
-- You are NOT the executor. Do NOT propose editing files or running commands.
-- Think critically about tradeoffs. The context below is all you have — do NOT explore further.
-- If the context is insufficient, state what is missing rather than guessing.
+- You are NOT the executor. Do NOT propose bash commands, file edits, or writes.
+- Tools allowed: grep, read, glob
+- Tools FORBIDDEN: bash, edit, write, websearch, webfetch
+- Cite specific file paths and line numbers when referencing code.
 
 Return your answer in this exact structure:
 
@@ -107,14 +114,15 @@ ___QUESTION___
 
     "review" {
         $PromptTemplate = @'
-CRITICAL: You are a READ-ONLY advisor. You MUST NOT use ANY tools (grep, read, ls, glob, bash, view, edit, websearch, etc.). Review ONLY the code provided below. Using tools will waste time and may cause the session to hang.
+You are a senior code reviewer. Review code for correctness, hidden coupling, initialization discipline, and gradient flow.
 
----
-
-You are a senior code reviewer. Review the changes below for correctness, hidden coupling, initialization discipline, and gradient flow.
+You have full read access to this codebase. Use grep, read, and glob freely to read the changed files, trace callers, check related modules, and verify assumptions. Take as much time as you need.
 
 Rules:
-- You are NOT the executor. Do NOT propose editing files directly.
+- You are NOT the executor. Do NOT propose bash commands, file edits, or writes.
+- Tools allowed: grep, read, glob
+- Tools FORBIDDEN: bash, edit, write, websearch, webfetch
+- Cite specific file paths and line numbers in findings.
 - Focus on logic errors, coupling risks, init/cleanup issues, and gradient-flow problems.
 - Ignore style nits unless they mask a real bug.
 
@@ -145,16 +153,16 @@ ___PROJECT_STATE___
 
     "discuss" {
         $PromptTemplate = @'
-CRITICAL: You are a READ-ONLY advisor. You MUST NOT use ANY tools (grep, read, ls, glob, bash, view, edit, websearch, etc.). Reason from the provided context only. Using tools will waste time and may cause the session to hang.
-
----
-
 You are a senior technical collaborator. Reasonix is stuck on a problem and needs your analysis and ideas.
 
+You have full read access to this codebase. Use grep, read, and glob freely to inspect relevant code, check logs, trace execution paths, and form evidence-based hypotheses. Take as much time as you need.
+
 Rules:
-- You are NOT the executor. Do NOT propose editing files or running commands.
+- You are NOT the executor. Do NOT propose bash commands, file edits, or writes.
+- Tools allowed: grep, read, glob
+- Tools FORBIDDEN: bash, edit, write, websearch, webfetch
 - Think like a debugger: form hypotheses, identify missing information, suggest next steps.
-- The context below is all you have — do NOT explore further.
+- Cite specific file paths and line numbers when referencing code.
 
 Return your analysis in this exact structure:
 
@@ -204,112 +212,163 @@ function Rotate-Logs {
 }
 
 # ============================================================
-#  Dispatch: opencode
+#  Dispatch helpers
 # ============================================================
 function _Sanitize-For-Cli($Text) {
-    # Strip non-printable and non-ASCII to avoid CLI/codepage mangling.
-    # Em-dash, smart quotes, CJK, etc. are replaced with a safe marker.
     $Safe = $Text -replace '[^\x09\x0A\x0D\x20-\x7E]', '?'
     return $Safe
 }
 
-if ($Provider -eq "opencode") {
+function _Run-OpenCode {
+    param([string]$Model, [string]$Variant, [string]$PromptText, [string]$SessionId)
     $LogFile = Join-Path $LogDir "advisor-$Timestamp.jsonl"
-
-    # Write prompt to temp file; pipe via stdin to avoid CLI encoding loss
     $TempPrompt = [System.IO.Path]::GetTempFileName()
-    $SanitizedPrompt = _Sanitize-For-Cli ($Prompt)
-    $SanitizedPrompt | Out-File $TempPrompt -Encoding ASCII
-
-    $JsonOutput = Get-Content $TempPrompt -Raw | opencode run --model $AdvisorModel --variant $AdvisorVariant --format json 2>&1
+    $StdoutFile = [System.IO.Path]::GetTempFileName()
+    $StderrFile = Join-Path $LogDir "advisor-$Timestamp-err.log"
+    $Sanitized = _Sanitize-For-Cli ($PromptText)
+    $Sanitized | Out-File $TempPrompt -Encoding ASCII
+    $SessArg = if ($SessionId) { "--session $SessionId" } else { "" }
+    cmd /c "type `"$TempPrompt`" | opencode run --model $Model --variant $Variant --format json $SessArg > `"$StdoutFile`" 2> `"$StderrFile`""
     $ExitCode = $LASTEXITCODE
-    Remove-Item $TempPrompt -Force -ErrorAction SilentlyContinue
+    $JsonOutput = Get-Content $StdoutFile -Raw -Encoding UTF8
+    Remove-Item $TempPrompt, $StdoutFile -Force -ErrorAction SilentlyContinue
+    return @{ ExitCode = $ExitCode; JsonOutput = $JsonOutput; LogFile = $LogFile }
+}
 
-    if ($ExitCode -eq 0 -and $JsonOutput) {
-        # Save raw JSONL log
-        $JsonOutput | Out-File $LogFile -Encoding UTF8
-        Rotate-Logs -LogDirectory $LogDir -Pattern "advisor-*.jsonl"
-
-        # Parse JSONL: extract type=text events
-        $ResponseText = ""
-        $TotalTokens = $null
-        $Cost = $null
-        $Lines = $JsonOutput -split "`n"
-        foreach ($Line in $Lines) {
-            if ($Line -match '"type":"text"') {
-                try {
-                    $Obj = $Line | ConvertFrom-Json
-                    $ResponseText += $Obj.part.text
-                } catch {}
-            }
-            if ($Line -match '"type":"step_finish"') {
-                try {
-                    $Obj = $Line | ConvertFrom-Json
-                    $TotalTokens = $Obj.part.tokens.total
-                    $Cost = $Obj.part.cost
-                } catch {}
-            }
+function _Parse-OpenCodeJsonl {
+    param([string]$JsonOutput)
+    $ResponseText = ""; $TotalTokens = $null; $Cost = $null; $SessionId = $null
+    $Lines = $JsonOutput -split "`n"
+    foreach ($Line in $Lines) {
+        if ($Line -match '"type":"step_start"' -and -not $SessionId) {
+            try { $Obj = $Line | ConvertFrom-Json; $SessionId = $Obj.part.sessionID } catch {}
         }
+        if ($Line -match '"type":"text"') {
+            try { $Obj = $Line | ConvertFrom-Json; $ResponseText += $Obj.part.text } catch {}
+        }
+        if ($Line -match '"type":"step_finish"') {
+            try { $Obj = $Line | ConvertFrom-Json; $TotalTokens = $Obj.part.tokens.total; $Cost = $Obj.part.cost } catch {}
+        }
+    }
+    return @{ Text = $ResponseText; Tokens = $TotalTokens; Cost = $Cost; SessionId = $SessionId }
+}
 
-        if ($ResponseText) {
-            $ResponseText.Trim()
+function _Run-Codex {
+    param([string]$Model, [string]$Sandbox, [string]$Reasoning, [string]$PromptText)
+    $LogFile = Join-Path $LogDir "codex-$Timestamp.log"
+    $StdoutFile = [System.IO.Path]::GetTempFileName()
+    if ($StderrRedirect) {
+        codex exec --skip-git-repo-check --model $Model --sandbox $Sandbox -c model_reasoning_effort="$Reasoning" $PromptText 2>"$LogFile" | Out-File $StdoutFile -Encoding UTF8
+    } else {
+        codex exec --skip-git-repo-check --model $Model --sandbox $Sandbox -c model_reasoning_effort="$Reasoning" $PromptText | Out-File $StdoutFile -Encoding UTF8
+    }
+    $ExitCode = $LASTEXITCODE
+    $Result = Get-Content $StdoutFile -Raw -Encoding UTF8
+    Remove-Item $StdoutFile -Force -ErrorAction SilentlyContinue
+    return @{ ExitCode = $ExitCode; Text = $Result; LogFile = $LogFile }
+}
+
+# ============================================================
+#  Dual mode: run both opencode and codex
+# ============================================================
+if ($Dual) {
+    # --- OpenCode (GLM) ---
+    $OC = _Run-OpenCode -Model $AdvisorModel -Variant $AdvisorVariant -PromptText $Prompt -SessionId $Session
+    $OCResult = $null
+    if ($OC.ExitCode -eq 0 -and $OC.JsonOutput) {
+        $OC.JsonOutput | Out-File $OC.LogFile -Encoding UTF8
+        Rotate-Logs -LogDirectory $LogDir -Pattern "advisor-*.jsonl"
+        $OCResult = _Parse-OpenCodeJsonl -JsonOutput $OC.JsonOutput
+    }
+
+    # --- Codex (GPT-5.5) ---
+    $CX = _Run-Codex -Model $CodexModel -Sandbox $CodexSandbox -Reasoning $CodexReasoning -PromptText $Prompt
+    if ($CX.ExitCode -eq 0) { Rotate-Logs -LogDirectory $LogDir -Pattern "codex-*.log" }
+
+    # --- Output ---
+    Write-Output "=== GLM 5.1 (opencode) ==="
+    if ($OCResult -and $OCResult.Text) {
+        Write-Output $OCResult.Text.Trim()
+    } else {
+        Write-Output "(no response - exit code $($OC.ExitCode))"
+    }
+    if ($OCResult.Tokens) {
+        $CL = if ($OCResult.Cost) { "cost=$($OCResult.Cost)" } else { "" }
+        $SL = if ($OCResult.SessionId) { " session=$($OCResult.SessionId)" } else { "" }
+        Write-Output "[advisor: $AdvisorModel | tokens=$($OCResult.Tokens) $CL |$SL log=$($OC.LogFile)]"
+    }
+    Write-Output ""
+    Write-Output "=== GPT-5.5 (codex) ==="
+    if ($CX.ExitCode -eq 0 -and $CX.Text) {
+        Write-Output $CX.Text.Trim()
+    } else {
+        Write-Output "(no response - exit code $($CX.ExitCode))"
+    }
+    Write-Output ""
+    Write-Output "[codex: $CodexModel | log=$($CX.LogFile)]"
+    exit 0
+}
+
+# ============================================================
+#  Single-mode dispatch: opencode
+# ============================================================
+if ($Provider -eq "opencode") {
+    $OC = _Run-OpenCode -Model $AdvisorModel -Variant $AdvisorVariant -PromptText $Prompt -SessionId $Session
+
+    if ($OC.ExitCode -eq 0 -and $OC.JsonOutput) {
+        $OC.JsonOutput | Out-File $OC.LogFile -Encoding UTF8
+        Rotate-Logs -LogDirectory $LogDir -Pattern "advisor-*.jsonl"
+        $Result = _Parse-OpenCodeJsonl -JsonOutput $OC.JsonOutput
+
+        if ($Result.Text) {
+            Write-Output $Result.Text.Trim()
         } else {
             Write-Output ""
             Write-Output "---"
             Write-Output "Advisor returned empty response"
-            Write-Output "Full log: $LogFile"
+            Write-Output "Full log: $($OC.LogFile)"
             exit 1
         }
 
-        if ($TotalTokens) {
-            $CostLine = if ($Cost) { "cost=$Cost" } else { "" }
+        if ($Result.Tokens) {
+            $CostLine = if ($Result.Cost) { "cost=$($Result.Cost)" } else { "" }
+            $SessionLine = if ($Result.SessionId) { " session=$($Result.SessionId)" } else { "" }
             Write-Output ""
-            Write-Output "[advisor: $AdvisorModel | tokens=$TotalTokens $CostLine | log=$LogFile]"
+            Write-Output "[advisor: $AdvisorModel | tokens=$($Result.Tokens) $CostLine |$SessionLine log=$($OC.LogFile)]"
         }
     } else {
         Write-Output ""
         Write-Output "---"
         Write-Output "Advisor call failed (opencode)"
-        Write-Output "Exit code: $ExitCode"
-        Write-Output "Full log: $LogFile"
-        if ($JsonOutput) { $JsonOutput | Out-File $LogFile -Encoding UTF8 }
-        exit $ExitCode
+        Write-Output "Exit code: $($OC.ExitCode)"
+        Write-Output "Full log: $($OC.LogFile)"
+        if ($OC.JsonOutput) { $OC.JsonOutput | Out-File $OC.LogFile -Encoding UTF8 }
+        exit $OC.ExitCode
     }
 
 # ============================================================
 #  Dispatch: codex (legacy)
 # ============================================================
 } else {
-    $LogFile = Join-Path $LogDir "codex-$Timestamp.log"
-    $StdoutFile = [System.IO.Path]::GetTempFileName()
+    $CX = _Run-Codex -Model $CodexModel -Sandbox $CodexSandbox -Reasoning $CodexReasoning -PromptText $Prompt
 
-    if ($StderrRedirect) {
-        codex exec --skip-git-repo-check --model $CodexModel --sandbox $CodexSandbox -c model_reasoning_effort="$CodexReasoning" $Prompt 2>"$LogFile" | Out-File $StdoutFile -Encoding UTF8
-    } else {
-        codex exec --skip-git-repo-check --model $CodexModel --sandbox $CodexSandbox -c model_reasoning_effort="$CodexReasoning" $Prompt | Out-File $StdoutFile -Encoding UTF8
-    }
-
-    $ExitCode = $LASTEXITCODE
-    $Result = Get-Content $StdoutFile -Raw -Encoding UTF8
-    Remove-Item $StdoutFile -Force -ErrorAction SilentlyContinue
-
-    if ($ExitCode -eq 0 -and $Result) {
-        $Result.Trim()
+    if ($CX.ExitCode -eq 0 -and $CX.Text) {
+        Write-Output $CX.Text.Trim()
         Rotate-Logs -LogDirectory $LogDir -Pattern "codex-*.log"
     } else {
         $StderrLog = ""
-        if (Test-Path $LogFile) {
-            $StderrLog = Get-Content $LogFile -Raw -Encoding UTF8
+        if (Test-Path $CX.LogFile) {
+            $StderrLog = Get-Content $CX.LogFile -Raw -Encoding UTF8
         }
         Write-Output ""
         Write-Output "---"
         Write-Output "Codex CLI call failed"
-        Write-Output "Exit code: $ExitCode"
+        Write-Output "Exit code: $($CX.ExitCode)"
         if ($StderrLog) {
             Write-Output "Error summary (first 2000 chars):"
             $StderrLog.Substring(0, [Math]::Min(2000, $StderrLog.Length))
         }
-        Write-Output "Full log: $LogFile"
-        exit $ExitCode
+        Write-Output "Full log: $($CX.LogFile)"
+        exit $CX.ExitCode
     }
 }

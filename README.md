@@ -1,4 +1,4 @@
-# Reasonix + Advisor Workflow
+# Reasonix + Advisor Workflow v1.0
 
 **Reasonix 总控 + 多模型顾问** — 一个可复用的结构化 AI 协作工作流。
 
@@ -42,7 +42,7 @@ powershell -ExecutionPolicy Bypass -File scripts/ask_codex.ps1 -Mode decide -Que
 | `PROJECT_STATE.md` | 状态板 — Reasonix 持续读写 | ✅ 随项目推进更新 |
 | `.reasonix/config.json` | 工作流配置（顾问 provider、模型、推理强度、日志目录） | ⬜ 可选修改 |
 | `.reasonix/skills/consult-codex.md` | 完整工作流规范（10 节 + 附录） | ❌ 无需修改，可复用 |
-| `scripts/ask_codex.ps1` | 顾问桥接脚本（opencode / codex 双 provider，三模式） | ❌ 无需修改 |
+| `scripts/ask_codex.ps1` | 顾问桥接脚本（opencode / codex 双 provider，三模式 + Dual + Session） | ❌ 无需修改 |
 
 ---
 
@@ -75,26 +75,38 @@ powershell -ExecutionPolicy Bypass -File scripts/ask_codex.ps1 -Mode decide -Que
 └──────────┬───────────────────────────────────────┘
            ▼
 ┌──────────────────────────────────────────────────┐
-│ ⑤ 按模式组装上下文 → 调用 ask_codex.ps1            │
+│ ⑤ 按模式组装上下文 + PROJECT_MAP                    │
 │   -Mode decide|review|discuss                    │
 │   -Context "GOAL/DIFF/PROBLEM + 结构化块"         │
+│   附自动生成的文件地图，引导 Advisor 探索            │
 └──────────┬───────────────────────────────────────┘
            ▼
 ┌──────────────────────────────────────────────────┐
-│ ⑥ Advisor 返回模式特定的结构化输出                  │
+│ ⑥ run_background + wait_for_job 调用 Advisor      │
+│   Advisor 可使用 grep/read/glob 探索代码库          │
+│   禁止 bash/edit/write（只读顾问）                  │
+└──────────┬───────────────────────────────────────┘
+           ▼
+┌──────────────────────────────────────────────────┐
+│ ⑦ Advisor 返回模式特定的结构化输出                  │
 │   decide: decision · rationale · risks · steps    │
 │   review: summary · findings · overall_notes      │
 │   discuss: analysis · hypotheses · recommendation │
 └──────────┬───────────────────────────────────────┘
            ▼
 ┌──────────────────────────────────────────────────┐
-│ ⑦ Reasonix action plan                           │
+│ ⑧ 防幻觉验证：逐条核对 Advisor 引用的 file:line     │
+│   ≥2 处不存在 → 换模型或重新提问                    │
+└──────────┬───────────────────────────────────────┘
+           ▼
+┌──────────────────────────────────────────────────┐
+│ ⑨ Reasonix action plan                           │
 │   处置: accepted / partially_accepted / rejected  │
 │   下一步 + 验证方式                                │
 └──────────┬───────────────────────────────────────┘
            ▼
 ┌──────────────────────────────────────────────────┐
-│ ⑧ 强制更新 PROJECT_STATE.md                       │
+│ ⑩ 强制更新 PROJECT_STATE.md                       │
 │   Verified results + Current behavior + 下一步    │
 └──────────────────────────────────────────────────┘
 ```
@@ -132,7 +144,33 @@ powershell -ExecutionPolicy Bypass -File scripts/ask_codex.ps1 `
   2>&1
 ```
 
-> **注意：** 在 Reasonix 的 `run_command` 环境中调用时，必须加 `2>&1`。`-Context` 的组装清单详见 `consult-codex.md` §5.2。
+> **注意：** 由于 Advisor 可以自由探索代码库，Reasonix 内部必须使用 `run_background` + `wait_for_job`（而非 `run_command`），超时建议 2-15 分钟按 T 级递增。`-Context` 的组装清单详见 `consult-codex.md` §5.2。
+
+---
+
+## 高级功能
+
+### Dual 模式 — GLM + GPT-5.5 双模型并行
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/ask_codex.ps1 `
+  -Mode decide `
+  -Question "这个架构重构方案是否可行？" `
+  -Context "GOAL: ..." `
+  -Dual
+```
+
+同时咨询 GLM 5.1 和 GPT-5.5，输出两个模型的独立建议，方便交叉验证。
+
+### Session 续接
+
+```powershell
+# 首次调用
+powershell ... -Mode discuss -Question "分析这个 bug" -Context "..."
+
+# 从输出中提取 session ID，后续追加信息继续讨论
+powershell ... -Mode discuss -Question "基于上次分析，我补充了日志" -Session ses_abc123
+```
 
 ---
 
