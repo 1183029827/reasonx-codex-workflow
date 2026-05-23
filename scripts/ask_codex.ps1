@@ -257,14 +257,17 @@ function _Run-Codex {
     param([string]$Model, [string]$Sandbox, [string]$Reasoning, [string]$PromptText)
     $LogFile = Join-Path $LogDir "codex-$Timestamp.log"
     $StdoutFile = [System.IO.Path]::GetTempFileName()
+    $TempPrompt = [System.IO.Path]::GetTempFileName()
+    $Sanitized = _Sanitize-For-Cli ($PromptText)
+    $Sanitized | Out-File $TempPrompt -Encoding ASCII
     if ($StderrRedirect) {
-        codex exec --skip-git-repo-check --model $Model --sandbox $Sandbox -c model_reasoning_effort="$Reasoning" $PromptText 2>"$LogFile" | Out-File $StdoutFile -Encoding UTF8
+        Get-Content $TempPrompt -Raw | codex exec --skip-git-repo-check --model $Model --sandbox $Sandbox -c model_reasoning_effort="$Reasoning" -c approval_policy="never" - 2>"$LogFile" | Out-File $StdoutFile -Encoding UTF8
     } else {
-        codex exec --skip-git-repo-check --model $Model --sandbox $Sandbox -c model_reasoning_effort="$Reasoning" $PromptText | Out-File $StdoutFile -Encoding UTF8
+        Get-Content $TempPrompt -Raw | codex exec --skip-git-repo-check --model $Model --sandbox $Sandbox -c model_reasoning_effort="$Reasoning" -c approval_policy="never" - | Out-File $StdoutFile -Encoding UTF8
     }
     $ExitCode = $LASTEXITCODE
     $Result = Get-Content $StdoutFile -Raw -Encoding UTF8
-    Remove-Item $StdoutFile -Force -ErrorAction SilentlyContinue
+    Remove-Item $TempPrompt, $StdoutFile -Force -ErrorAction SilentlyContinue
     return @{ ExitCode = $ExitCode; Text = $Result; LogFile = $LogFile }
 }
 

@@ -3,7 +3,7 @@
   "advisor": {
     "provider": "opencode",
     "model": "opencode-go/glm-5.1",
-    "variant": "xhigh"
+    "variant": "medium"
   },
   "codex": {
     "model": "gpt-5.5",

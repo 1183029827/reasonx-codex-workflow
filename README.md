@@ -210,6 +210,12 @@ powershell ... -Mode discuss -Question "基于上次分析，我补充了日志"
 
 ## Changelog
 
+### [1.0.1] — 2026-05-23
+
+- **Codex stdin fix**: `_Run-Codex` now pipes prompt via stdin (`Get-Content | codex exec ... -`) instead of passing it as a CLI argument, preventing shell truncation/escaping failures with special characters.
+- **Codex approval policy**: Added `-c approval_policy="never"` to prevent codex from hanging in non-interactive mode when it would otherwise prompt for confirmation.
+- **Advisor variant** reverted from `xhigh` to `medium` as the practical default for daily use.
+
 ### [1.0.0] — 2026-05-23
 
 - **Advisor exploration mode**: Advisor can now explore the codebase freely using `grep`, `read`, and `glob`. Prompt changed from "MUST NOT use ANY tools" to "use grep, read, and glob freely". `bash`, `edit`, and `write` remain forbidden.
