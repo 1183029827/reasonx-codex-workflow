@@ -1,5 +1,10 @@
 {
-  "$comment": "Copy the agent blocks below into your opencode.json under the 'agent' key.",
+  "$comment-install": "=== GLOBAL INSTALL (recommended) ===",
+  "$comment-global": "Copy this entire 'agent' block into ~/.config/opencode/opencode.json under the 'agent' key.",
+  "$comment-global2": "Also ensure .opencode/prompts/advisor.txt exists at ~/.config/opencode/prompts/advisor.txt",
+  "$comment-install2": "=== PROJECT INSTALL ===",
+  "$comment-project": "Or copy this 'agent' block into your project's opencode.json under the 'agent' key.",
+  "$comment-advisor": "--- Default advisor (T2 medium) ---",
   "agent": {
     "advisor": {
       "description": "Second-opinion advisor for high-value judgment calls. Read-only: grep/read/glob only. Use when escalation rules in second-opinion skill are met.",
