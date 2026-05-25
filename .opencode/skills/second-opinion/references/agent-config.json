@@ -1,0 +1,65 @@
+{
+  "$comment": "Copy the agent blocks below into your opencode.json under the 'agent' key.",
+  "agent": {
+    "advisor": {
+      "description": "Second-opinion advisor for high-value judgment calls. Read-only: grep/read/glob only. Use when escalation rules in second-opinion skill are met.",
+      "model": "opencode-go/glm-5.1",
+      "prompt": "{file:./.opencode/prompts/advisor.txt}",
+      "mode": "subagent",
+      "hidden": true,
+      "permission": {
+        "edit": "deny",
+        "bash": "deny",
+        "task": "deny",
+        "webfetch": "deny",
+        "websearch": "deny"
+      }
+    },
+    "$comment-low": "Optional: per-variant advisors for different reasoning levels.",
+    "advisor-low": {
+      "description": "Low-reasoning advisor for T1 quick checks. Read-only.",
+      "model": "opencode-go/glm-5.1",
+      "prompt": "{file:./.opencode/prompts/advisor.txt}",
+      "mode": "subagent",
+      "hidden": true,
+      "permission": {
+        "edit": "deny",
+        "bash": "deny",
+        "task": "deny",
+        "webfetch": "deny",
+        "websearch": "deny"
+      },
+      "reasoningEffort": "low"
+    },
+    "advisor-high": {
+      "description": "High-reasoning advisor for T3-T4 architecture decisions. Read-only.",
+      "model": "opencode-go/glm-5.1",
+      "prompt": "{file:./.opencode/prompts/advisor.txt}",
+      "mode": "subagent",
+      "hidden": true,
+      "permission": {
+        "edit": "deny",
+        "bash": "deny",
+        "task": "deny",
+        "webfetch": "deny",
+        "websearch": "deny"
+      },
+      "reasoningEffort": "high"
+    },
+    "advisor-max": {
+      "description": "Max-reasoning advisor for T4 strategic decisions. Read-only.",
+      "model": "opencode-go/glm-5.1",
+      "prompt": "{file:./.opencode/prompts/advisor.txt}",
+      "mode": "subagent",
+      "hidden": true,
+      "permission": {
+        "edit": "deny",
+        "bash": "deny",
+        "task": "deny",
+        "webfetch": "deny",
+        "websearch": "deny"
+      },
+      "reasoningEffort": "max"
+    }
+  }
+}

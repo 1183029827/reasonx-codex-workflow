@@ -1,0 +1,55 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "opencode-go/deepseek-v4-pro",
+  "instructions": ["AGENTS.md", "PROJECT_STATE.md"],
+  "agent": {
+    "advisor": {
+      "description": "Second-opinion advisor for high-value judgment calls. Read-only: grep/read/glob only. Use when escalation rules in second-opinion skill are met.",
+      "model": "opencode-go/glm-5.1",
+      "prompt": "{file:./.opencode/prompts/advisor.txt}",
+      "reasoningEffort": "medium",
+      "steps": 20,
+      "mode": "subagent",
+      "hidden": true,
+      "permission": {
+        "edit": "deny",
+        "bash": "deny",
+        "task": "deny",
+        "webfetch": "deny",
+        "websearch": "deny"
+      }
+    },
+    "advisor-low": {
+      "description": "Low-reasoning advisor for T1 quick checks.",
+      "model": "opencode-go/glm-5.1",
+      "prompt": "{file:./.opencode/prompts/advisor.txt}",
+      "reasoningEffort": "low",
+      "steps": 5,
+      "mode": "subagent",
+      "hidden": true,
+      "permission": {
+        "edit": "deny",
+        "bash": "deny",
+        "task": "deny",
+        "webfetch": "deny",
+        "websearch": "deny"
+      }
+    },
+    "advisor-high": {
+      "description": "High-reasoning advisor for T3-T4 decisions.",
+      "model": "opencode-go/glm-5.1",
+      "prompt": "{file:./.opencode/prompts/advisor.txt}",
+      "reasoningEffort": "high",
+      "steps": 30,
+      "mode": "subagent",
+      "hidden": true,
+      "permission": {
+        "edit": "deny",
+        "bash": "deny",
+        "task": "deny",
+        "webfetch": "deny",
+        "websearch": "deny"
+      }
+    }
+  }
+}

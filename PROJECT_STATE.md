@@ -1,28 +1,34 @@
 ﻿# PROJECT_STATE
 
 ## Goal
-- `<褰撳墠椤圭洰鐩爣>`
+- `<当前项目目标>`
 
 ---
 
 ## Design (intended)
-- Reasonix 鎬绘帶 + Codex 椤鹃棶妯″紡鎺ㄨ繘椤圭洰銆?- 宸ヤ綔娴佽鑼冭 `.reasonix/skills/consult-codex.md`銆?
+- OpenCode 总控 + Advisor 顾问模式推进项目。
+- 工作流规范见 `.opencode/skills/second-opinion/SKILL.md`。
+
 ## Current behavior (actual)
-- _(濉啓瀹為檯杩愯鐘舵€?_
+- _(填写实际运行状态)_
 
 ## Verified results
 
-| 楠岃瘉椤?| 缁撴灉 | 楠岃瘉鍛戒护 | 澶囨敞 |
+| 验证项 | 结果 | 验证命令 | 备注 |
 |--------|------|---------|------|
-| 宸ヤ綔娴佸熀寤哄氨浣?| 鉁?| 鈥?| 鏂囦欢缁撴瀯宸插垵濮嬪寲 |
+| Skill 基础就绪 | ✅ | — | second-opinion skill 已创建 |
+| Task 调用 advisor 验证 | ✅ | Task(subagent_type:"advisor") | advisor subagent 成功响应，防幻觉验证 0 失误 |
+| GLM review 后修复 | ✅ | — | 修复 3 项（T1 fast-track、格式去重、steps/specific param names） |
 
 ## Repo map
-- `REASONIX.md` 鈥?椤圭洰鍏ュ彛
-- `PROJECT_STATE.md` 鈥?鏈枃浠?- `.reasonix/config.json` 鈥?宸ヤ綔娴侀厤缃?- `.reasonix/skills/consult-codex.md` 鈥?宸ヤ綔娴佽鑼?- `.reasonix/skills/consult-server.md` 鈥?鏈嶅姟鍣ㄥ伐浣滄祦瑙勮寖
-- `scripts/ask_codex.ps1` 鈥?Codex CLI 妗ユ帴
+- `AGENTS.md` — 项目入口
+- `PROJECT_STATE.md` — 本文件
+- `opencode.json` — 项目配置（总控模型 + advisor agent）
+- `.opencode/skills/second-opinion/SKILL.md` — 工作流规范
+- `.opencode/skills/second-opinion/references/agent-config.json` — 配置模板
 
 ## Open problems
-- _(寰呰В鍐崇殑闂)_
+- _(待解决的问题)_
 
 ## Next candidate actions
-- _(涓嬩竴姝ユ搷浣?_
+- _(下一步操作)_
